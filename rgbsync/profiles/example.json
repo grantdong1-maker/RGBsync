@@ -1,0 +1,26 @@
+{
+  "_comment": [
+    "Direct-HID example profile. Rename/copy this file and fill in your device's real",
+    "vendor_id, product_id and protocol bytes before enabling it. Nothing here runs",
+    "until the daemon finds a matching VID/PID AND the web UI shows the device as enabled.",
+    "Template tokens: {i}=LED index, {col}=column, {r}/{g}/{b}=color bytes."
+  ],
+  "name": "Example RGB keyboard",
+  "type": "Keyboard",
+  "location": "hidraw",
+  "match": {
+    "vendor": "ExampleVendor",
+    "vendor_id": 11111,
+    "product_id": 22222
+  },
+  "matrix": { "rows": 6, "cols": 22 },
+  "report": {
+    "id": 4,
+    "size": 64,
+    "init": [
+      { "bytes": [0, 0, 16, 0, 0] },
+      { "bytes": [0, 0, 1, 0, 0] }
+    ],
+    "data": [4, 1, "{i}", "{r}", "{g}", "{b}", 0, 0]
+  }
+}

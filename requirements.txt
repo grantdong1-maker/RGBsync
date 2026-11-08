@@ -1,0 +1,4 @@
+# Optional but recommended: python hidapi bindings for direct-HID profiles.
+# (pip install hidapi) — on Debian/Ubuntu you can often use python3-hid instead.
+# The OpenRGB SDK backend and the web UI need nothing outside the stdlib.
+hidapi>=0.14.0

@@ -1,0 +1,6 @@
+# RGBSync — allow the desktop user group to control hidraw RGB devices
+# Install: sudo cp 99-rgbsync.rules /etc/udev/rules.d/ && sudo udevadm control --reload
+# Only this lets the direct-HID backend write to /dev/hidraw*.
+# The OpenRGB-SDK backend needs no udev rules (openrgb handles USB access).
+
+KERNEL=="hidraw*", SUBSYSTEM=="hidraw", GROUP="plugdev", MODE="0660"

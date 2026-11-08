@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>RGBSync dashboard</title>
+<style>
+  :root {
+    --bg:#101418; --panel:#1a2027; --line:#2a323b; --text:#e6ecf2;
+    --dim:#8fa0b0; --accent:#00c8ff;
+  }
+  * { box-sizing:border-box; margin:0; }
+  body { background:var(--bg); color:var(--text);
+         font:15px/1.45 system-ui, sans-serif; padding:24px; }
+  h1 { font-size:20px; margin-bottom:4px; }
+  .status { color:var(--dim); font-size:13px; margin-bottom:20px; }
+  .status b { color:var(--accent); }
+  .grid { display:grid; gap:16px; grid-template-columns:repeat(auto-fill,minmax(280px,1fr)); max-width:1100px; }
+  .card { background:var(--panel); border:1px solid var(--line);
+          border-radius:10px; padding:16px; }
+  .card h2 { font-size:15px; margin-bottom:10px; }
+  .effects { display:flex; flex-wrap:wrap; gap:8px; }
+  .effect { padding:7px 14px; border:1px solid var(--line); background:var(--bg);
+            border-radius:6px; color:var(--text); cursor:pointer; font-size:14px; }
+  .effect:hover { border-color:var(--accent); }
+  .effect.active { background:var(--accent); border-color:var(--accent);
+                   color:#06222c; font-weight:600; }
+  label { display:block; font-size:13px; color:var(--dim); margin:10px 0 4px; }
+  input[type=range] { width:100%; }
+  input[type=color] { width:46px; height:28px; border:none; background:none; cursor:pointer; }
+  .colors { display:flex; align-items:center; gap:14px; }
+  .dev { display:flex; align-items:center; gap:10px; padding:7px 0;
+         border-top:1px solid var(--line); font-size:14px; }
+  .dev:first-of-type { border-top:none; }
+  .dev .meta { color:var(--dim); font-size:12px; }
+  .dev .grow { flex:1; }
+  .dev .name { cursor:pointer; }
+  .dev .name.off { color:var(--dim); text-decoration:line-through; }
+  button.refresh { margin-top:14px; padding:7px 18px; background:var(--bg);
+                   border:1px solid var(--line); color:var(--text);
+                   border-radius:6px; cursor:pointer; }
+  button.refresh:hover { border-color:var(--accent); }
+</style>
+</head>
+<body>
+<h1>RGBSync</h1>
+<div class="status" id="status">connecting…</div>
+
+<div class="grid">
+  <div class="card">
+    <h2>Effect</h2>
+    <div class="effects" id="effects"></div>
+    <div id="params"></div>
+  </div>
+
+  <div class="card">
+    <h2>Global</h2>
+    <label>Speed <span id="speedVal"></span></label>
+    <input type="range" id="speed" min="0" max="100" step="1">
+    <label>Brightness <span id="brightVal"></span></label>
+    <input type="range" id="brightness" min="5" max="100" step="1">
+    <label>Frames per second <span id="fpsVal"></span></label>
+    <input type="range" id="fps" min="1" max="60" step="1">
+  </div>
+
+  <div class="card">
+    <h2>Devices <span style="color:var(--dim);font-weight:400">click to mute a device</span></h2>
+    <div id="devices"></div>
+    <button class="refresh" onclick="refreshDevices()">↻ Rescan</button>
+  </div>
+</div>
+
+<script>
+const state = { effect:"", params:{} };
+let pollTimer = null;
+
+async function api(path, body) {
+  const res = await fetch(path, body ? {
+    method:"POST", headers:{"Content-Type":"application/json"},
+    body: JSON.stringify(body)
+  } : undefined);
+  return res.json();
+}
+
+function render(s) {
+  document.getElementById("status").innerHTML =
+    `connected: <b>${s.connected ? "yes" : "no"}</b> · ` +
+    `${s.devices.length} devices · ${s.frames} frames pushed`;
+  if (s.effect !== state.effect) {
+    state.effect = s.effect;
+    loadEffects();
+  }
+  if (JSON.stringify(s.params) !== JSON.stringify(state.params)) {
+    state.params = s.params || {};
+    if (currentEffectMeta) renderEffectParams(currentEffectMeta);
+  }
+  setValue("speed", s.speed, "speedVal");
+  setValue("brightness", Math.round(s.brightness * 100), "brightVal");
+  setValue("fps", s.fps, "fpsVal");
+  renderDevices(s.devices);
+}
+
+function setValue(id, val, displayId) {
+  const el = document.getElementById(id);
+  el.value = val;
+  document.getElementById(displayId).textContent = val;
+}
+
+async function loadEffects() {
+  const effects = await api("/api/effects");
+  const box = document.getElementById("effects");
+  box.innerHTML = "";
+  effects.forEach(e => {
+    const b = document.createElement("button");
+    b.className = "effect" + (e.name === state.effect ? " active" : "");
+    b.textContent = e.label;
+    b.onclick = async () => {
+      await api("/api/effect", {effect: e.name});
+      currentEffectMeta = e;
+      state.effect = e.name;      // avoid a flicker before the next poll
+      b.parentElement.querySelectorAll(".effect")
+        .forEach(x => x.classList.remove("active"));
+      b.classList.add("active");
+      renderEffectParams(e);
+    };
+    box.appendChild(b);
+  });
+}
+
+let currentEffectMeta = null;
+function renderEffectParams(meta) {
+  const box = document.getElementById("params");
+  if (!meta) { box.innerHTML = ""; return; }
+  const defaults = meta.params || {};
+  const colors = Object.keys({...defaults, ...state.params})
+    .filter(k => k.endsWith("color") || k.endsWith("color2"));
+  if (colors.length === 0) { box.innerHTML = ""; return; }
+  box.innerHTML = "";
+  colors.forEach(key => {
+    const wrap = document.createElement("div");
+    wrap.className = "colors";
+    const label = document.createElement("label");
+    label.textContent = key;
+    const input = document.createElement("input");
+    input.type = "color";
+    input.value = (state.params[key] || defaults[key] || "#ff0000");
+    input.oninput = async ev => {
+      state.params[key] = ev.target.value;
+      await api("/api/effect", {effect: state.effect, params: {[key]: ev.target.value}});
+    };
+    wrap.appendChild(input);
+    wrap.appendChild(label);
+    box.appendChild(wrap);
+  });
+}
+
+function renderDevices(devices) {
+  const box = document.getElementById("devices");
+  box.innerHTML = "";
+  devices.forEach(d => {
+    const row = document.createElement("div");
+    row.className = "dev";
+    const name = document.createElement("span");
+    name.className = "name" + (d.enabled ? "" : " off");
+    name.textContent = `${d.name} (${d.type})`;
+    const meta = document.createElement("span");
+    meta.className = "meta";
+    meta.textContent = `${d.backend} · ${d.leds} LEDs · ${d.states}`;
+    const grow = document.createElement("span");
+    grow.className = "grow";
+    row.append(name, grow, meta);
+    name.onclick = () => api("/api/device", {id: d.id, enabled: !d.enabled});
+    name.title = "toggle this device's sync";
+    box.appendChild(row);
+  });
+}
+
+async function refreshDevices() {
+  const s = await api("/api/refresh", {});
+  render(s);
+}
+
+["speed", "brightness", "fps"].forEach(id => {
+  const el = document.getElementById(id);
+  el.onchange = async () => {
+    const value = id === "brightness" ? el.value / 100 : Number(el.value);
+    await api("/api/param", {key: id, value});
+  };
+  el.oninput = () =>
+    document.getElementById(id === "speed" ? "speedVal"
+      : id === "brightness" ? "brightVal" : "fpsVal").textContent = el.value;
+});
+
+async function poll() {
+  try {
+    render(await api("/api/state"));
+  } catch (e) {
+    document.getElementById("status").textContent = "daemon unreachable";
+  }
+}
+poll();
+pollTimer = setInterval(poll, 2000);
+</script>
+</body>
+</html>
