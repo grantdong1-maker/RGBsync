@@ -1,4 +1,4 @@
-# RGBSync — homemade RGB device sync (mouse, keyboard, etc.)
+# RGBSync — the "we got RGB controller at home" RGB device sync (mouse, keyboard, etc.)
 
 A homemade, single-binary-standalone Python daemon that drives **one synchronized
 RGB effect across every RGB device it finds** — every device shares a frame
